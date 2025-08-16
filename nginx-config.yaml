@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: default
+data:
+  default.conf: |
+    server {
+        listen 80;
+        location / {
+            return 200 '{"message":"Hello from nginx","hostname":"$hostname","server":"$server_addr:$server_port","time":"$time_iso8601"}';
+            add_header Content-Type application/json;
+        }
+        location /health {
+            return 200 '{"status":"healthy"}';
+            add_header Content-Type application/json;
+        }
+    }
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config-2
+  namespace: default
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        location / {
+            return 200 '{"message":"Hello from nginx 2","hostname":"$hostname","server":"$server_addr:$server_port","time":"$time_iso8601"}';
+            add_header Content-Type application/json;
+        }
+        location /health {
+            return 200 '{"status":"healthy"}';
+            add_header Content-Type application/json;
+        }
+    }

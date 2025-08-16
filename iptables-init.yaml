@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iptables-init-script
+  namespace: default
+data:
+  setup-iptables.sh: |
+    #!/bin/sh
+    set -e
+    
+    # ติดตั้ง iptables ใน Alpine
+    echo "Installing iptables..."
+    apk add --no-cache iptables
+    
+    echo "Setting up iptables rules for Envoy sidecar..."
+    
+    # Create chains (ignore errors if already exist)
+    iptables -t nat -N ISTIO_PROXY_UID 2>/dev/null || echo "ISTIO_PROXY_UID chain exists"
+    iptables -t nat -F ISTIO_PROXY_UID 2>/dev/null || echo "Failed to flush ISTIO_PROXY_UID"
+    
+    iptables -t nat -N ISTIO_PROXY_INBOUND 2>/dev/null || echo "ISTIO_PROXY_INBOUND chain exists"
+    iptables -t nat -F ISTIO_PROXY_INBOUND 2>/dev/null || echo "Failed to flush ISTIO_PROXY_INBOUND"
+    
+    iptables -t nat -N ISTIO_PROXY_OUTPUT 2>/dev/null || echo "ISTIO_PROXY_OUTPUT chain exists"
+    iptables -t nat -F ISTIO_PROXY_OUTPUT 2>/dev/null || echo "Failed to flush ISTIO_PROXY_OUTPUT"
+    
+    echo "Creating iptables rules..."
+    
+    # Skip Envoy's own traffic to prevent loops (UID 1337)
+    iptables -t nat -A ISTIO_PROXY_UID -m owner --uid-owner 1337 -j RETURN
+    
+    # Redirect inbound traffic to Envoy inbound listener (15006)
+    # ใช้ --dport 15006 แทน 80 เพื่อจับ traffic ที่มาจาก service
+    iptables -t nat -A ISTIO_PROXY_INBOUND -p tcp -j REDIRECT --to-port 15006
+    
+    # Redirect outbound traffic to Envoy outbound listener (15001)
+    # Skip traffic from Envoy (UID 1337) and localhost
+    iptables -t nat -A ISTIO_PROXY_OUTPUT -m owner --uid-owner 1337 -j RETURN
+    iptables -t nat -A ISTIO_PROXY_OUTPUT -d 127.0.0.1/32 -j RETURN  
+    iptables -t nat -A ISTIO_PROXY_OUTPUT -p tcp -j REDIRECT --to-port 15001
+    
+    echo "Hooking chains into main tables..."
+    
+    # Hook into PREROUTING for inbound traffic
+    iptables -t nat -A PREROUTING -p tcp -j ISTIO_PROXY_INBOUND
+    
+    # Hook into OUTPUT for outbound traffic
+    iptables -t nat -A OUTPUT -p tcp -j ISTIO_PROXY_UID
+    iptables -t nat -A OUTPUT -p tcp -j ISTIO_PROXY_OUTPUT
+    
+    echo "iptables rules configured successfully!"
+    
+    echo "=== Final iptables NAT rules ==="
+    iptables -t nat -L -v --line-numbers
+    
+    echo "=== Network interfaces ==="
+    ip addr show
+    
+    echo "Init container completed successfully"

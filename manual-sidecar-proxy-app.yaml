@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simple-app-with-sidecar
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simple-app
+      version: with-sidecar
+  template:
+    metadata:
+      labels:
+        app: simple-app
+        version: with-sidecar
+    spec:
+      # Init container สำหรับ setup iptables
+      initContainers:
+      - name: iptables-init
+        image: alpine:latest
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+          privileged: true
+        command:
+        - /bin/sh
+        - /scripts/setup-iptables.sh
+        volumeMounts:
+        - name: iptables-script
+          mountPath: /scripts
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+              
+      containers:
+      # Main application container
+      - name: app
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+      - name: app2
+        image: nginx:alpine
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: nginx-config-2
+          mountPath: /etc/nginx/conf.d
+          
+      # Envoy sidecar container
+      - name: envoy-sidecar
+        image: envoyproxy/envoy:v1.28-latest
+        ports:
+        - containerPort: 15000  # Admin
+          name: admin
+        - containerPort: 15001  # Outbound
+          name: outbound  
+        - containerPort: 15006  # Inbound
+          name: inbound
+        - containerPort: 15090  # Stats
+          name: stats
+        command:
+        - /usr/local/bin/envoy
+        args:
+        - -c
+        - /etc/envoy/envoy.yaml
+        - --service-cluster
+        - simple-app
+        - --service-node
+        - simple-app
+        - --log-level
+        - info
+        securityContext:
+          runAsUser: 1337  # Special UID for Envoy
+        volumeMounts:
+        - name: envoy-config-vol
+          mountPath: /etc/envoy
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+            
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      - name: nginx-config-2
+        configMap:
+          name: nginx-config-2
+      - name: envoy-config-vol
+        configMap:
+          name: envoy-config
+      - name: iptables-script
+        configMap:
+          name: iptables-init-script
+          defaultMode: 0755
+
+---
+apiVersion: v1  
+kind: Service
+metadata:
+  name: simple-app-sidecar-service
+  namespace: default
+spec:
+  selector:
+    app: simple-app
+    version: with-sidecar
+  ports:
+  - name: http
+    port: 80
+    targetPort: 15006  # ชี้ไปที่ Envoy inbound listener
+  type: ClusterIP
