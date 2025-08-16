@@ -79,6 +79,7 @@ Get detailed information about the sidecar-enabled pod:
 ```bash
 kubectl describe pod -l version=with-sidecar
 ```
+<img width="1902" height="967" alt="Image" src="https://github.com/user-attachments/assets/c82cb464-e99a-4452-83c4-06d3485fea7b" />
 
 You should see:
 - An init container for iptables setup
@@ -100,12 +101,13 @@ Inside the test client, make a request:
 ```bash
 curl simple-app-sidecar-service.default.svc.cluster.local
 ```
+<img width="1897" height="240" alt="Image" src="https://github.com/user-attachments/assets/93bda31d-63db-482c-a128-505dd709b906" />
 
-This should work, but traffic is going to the wrong port initially.
+This should work, but we can test if iptables and Envoy are actually working. We will change the port configuration to verify the traffic routing.
 
 ### Test 2: Fix Port Configuration and Reload
 
-The initial configuration has the wrong port mapping. Let's fix it:
+The initial configuration has the old port mapping. Let's change it:
 
 1. Edit the `envoy-config.yaml` file and change:
 
@@ -139,6 +141,7 @@ Test again with the corrected configuration:
 kubectl run test-client --image=curlimages/curl --rm -it -- sh
 curl simple-app-sidecar-service.default.svc.cluster.local
 ```
+<img width="1898" height="416" alt="Image" src="https://github.com/user-attachments/assets/c74cc347-0854-4cce-b7a6-e890cee81a1f" />
 
 Now you should see traffic properly routed to port 8080 (app2 container).
 
